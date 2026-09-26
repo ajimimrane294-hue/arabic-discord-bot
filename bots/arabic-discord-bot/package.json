@@ -1,0 +1,14 @@
+{
+  "name": "@workspace/arabic-discord-bot",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node src/index.mjs",
+    "start": "node src/index.mjs"
+  },
+  "dependencies": {
+    "discord.js": "^14.25.1",
+    "sharp": "^0.34.5"
+  }
+}

@@ -1,0 +1,1 @@
+- [Discord bot authentication](discord-bot-integration.md) — Discord OAuth connections are user-scoped; gateway bots still require a separate Bot Token and privileged intents.
