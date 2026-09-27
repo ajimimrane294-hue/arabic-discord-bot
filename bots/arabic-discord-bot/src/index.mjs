@@ -1,435 +1,92 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
-import {
-  AttachmentBuilder,
-  Client,
-  EmbedBuilder,
-  GatewayIntentBits,
-  PermissionFlagsBits,
-  REST,
-  Routes,
-  SlashCommandBuilder,
-} from "discord.js";
-import sharp from "sharp";
+import { Client, EmbedBuilder, GatewayIntentBits, PermissionFlagsBits, REST, Routes, SlashCommandBuilder, ChannelType } from "discord.js";
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 
-const token = process.env.DISCORD_BOT_TOKEN;
-if (!token) {
-  throw new Error("المتغير السري DISCORD_BOT_TOKEN غير موجود.");
-}
+const WELCOME = { channelId: "", title: "🎖️ مرحبا بك في الجيش 🎖️", description: "مرحبا {user} نورت {server} 👋\nالتزم بالقوانين واحترم الرتب.", color: 0x2b2d31, image: "", thumbnail: true, footer: "ترحيب تلقائي" };
+const AUTO_REPLIES = [
+  { trigger: ["سلام عليكم", "السلام عليكم"], reply: "وعليكم السلام ورحمة الله وبركاته {user} 👋" },
+  { trigger: ["صباح الخير"], reply: "صباح النور {user} ☀️" },
+  { trigger: ["مساء الخير"], reply: "مساء النور {user} 🌙" },
+  { trigger: ["تحية عسكرية"], reply: "تحية عسكرية لك {user} 🫡" },
+];
 
-const dataDirectory = path.resolve("data");
-const settingsFile = path.join(dataDirectory, "guild-settings.json");
-const levelsFile = path.join(dataDirectory, "levels.json");
+const commands = [
+  new SlashCommandBuilder().setName("kick").setDescription("طرد عضو").setDefaultMemberPermissions(PermissionFlagsBits.KickMembers).addUserOption(o=>o.setName("العضو").setDescription("منشن").setRequired(true)).addStringOption(o=>o.setName("السبب").setDescription("السبب")),
+  new SlashCommandBuilder().setName("ban").setDescription("بان عضو").setDefaultMemberPermissions(PermissionFlagsBits.BanMembers).addUserOption(o=>o.setName("العضو").setDescription("منشن").setRequired(true)).addStringOption(o=>o.setName("السبب").setDescription("السبب")),
+  new SlashCommandBuilder().setName("unban").setDescription("فك البان").setDefaultMemberPermissions(PermissionFlagsBits.BanMembers).addStringOption(o=>o.setName("id").setDescription("ID").setRequired(true)),
+  new SlashCommandBuilder().setName("timeout").setDescription("ميوت مؤقت").setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers).addUserOption(o=>o.setName("العضو").setDescription("منشن").setRequired(true)).addIntegerOption(o=>o.setName("المدة").setDescription("دقائق").setRequired(true)).addStringOption(o=>o.setName("السبب").setDescription("السبب")),
+  new SlashCommandBuilder().setName("untimeout").setDescription("فك الميوت").setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers).addUserOption(o=>o.setName("العضو").setDescription("منشن").setRequired(true)),
+  new SlashCommandBuilder().setName("warn").setDescription("توبيخ عسكري").setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers).addUserOption(o=>o.setName("العضو").setDescription("منشن").setRequired(true)).addStringOption(o=>o.setName("السبب").setDescription("السبب").setRequired(true)).addStringOption(o=>o.setName("الدليل").setDescription("الدليل")),
+  new SlashCommandBuilder().setName("clear").setDescription("مسح رسائل").setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages).addIntegerOption(o=>o.setName("العدد").setDescription("1-100").setRequired(true).setMinValue(1).setMaxValue(100)),
+  new SlashCommandBuilder().setName("lock").setDescription("قفل الروم").setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
+  new SlashCommandBuilder().setName("unlock").setDescription("فتح الروم").setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
+  new SlashCommandBuilder().setName("hide").setDescription("إخفاء الروم").setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
+  new SlashCommandBuilder().setName("unhide").setDescription("إظهار الروم").setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
+  new SlashCommandBuilder().setName("slowmode").setDescription("سلو مود").setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels).addIntegerOption(o=>o.setName("الثواني").setDescription("0 لإلغاء").setRequired(true).setMinValue(0).setMaxValue(21600)),
+  new SlashCommandBuilder().setName("addrole").setDescription("إعطاء رتبة").setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles).addUserOption(o=>o.setName("العضو").setDescription("منشن").setRequired(true)).addRoleOption(o=>o.setName("الرتبة").setDescription("الرتبة").setRequired(true)),
+  new SlashCommandBuilder().setName("removerole").setDescription("سحب رتبة").setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles).addUserOption(o=>o.setName("العضو").setDescription("منشن").setRequired(true)).addRoleOption(o=>o.setName("الرتبة").setDescription("الرتبة").setRequired(true)),
+  new SlashCommandBuilder().setName("role").setDescription("إنشاء رتبة").setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles).addStringOption(o=>o.setName("الاسم").setDescription("اسم الرتبة").setRequired(true)),
+  new SlashCommandBuilder().setName("nick").setDescription("تغيير الاسم").setDefaultMemberPermissions(PermissionFlagsBits.ManageNicknames).addUserOption(o=>o.setName("العضو").setDescription("منشن").setRequired(true)).addStringOption(o=>o.setName("الاسم").setDescription("الاسم الجديد").setRequired(true)),
+  new SlashCommandBuilder().setName("say").setDescription("البوت يقول رسالة").setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages).addStringOption(o=>o.setName("الرسالة").setDescription("شنو يقول").setRequired(true)),
+  new SlashCommandBuilder().setName("embed").setDescription("رسالة إمبد").setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages).addStringOption(o=>o.setName("العنوان").setDescription("العنوان").setRequired(true)).addStringOption(o=>o.setName("الوصف").setDescription("الوصف").setRequired(true)).addStringOption(o=>o.setName("اللون").setDescription("مثلا #FF0000").setRequired(false)),
+  new SlashCommandBuilder().setName("announce").setDescription("إعلان رسمي").setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addStringOption(o=>o.setName("العنوان").setDescription("عنوان الإعلان").setRequired(true)).addStringOption(o=>o.setName("الرسالة").setDescription("نص الإعلان").setRequired(true)).addChannelOption(o=>o.setName("الروم").setDescription("روم الإعلان").setRequired(false)),
+  new SlashCommandBuilder().setName("poll").setDescription("تصويت").setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages).addStringOption(o=>o.setName("السؤال").setDescription("سؤال التصويت").setRequired(true)),
+  new SlashCommandBuilder().setName("avatar").setDescription("صورة عضو").addUserOption(o=>o.setName("العضو").setDescription("منشن")),
+  new SlashCommandBuilder().setName("banner").setDescription("بانر عضو").addUserOption(o=>o.setName("العضو").setDescription("منشن")),
+  new SlashCommandBuilder().setName("userinfo").setDescription("معلومات عضو").addUserOption(o=>o.setName("العضو").setDescription("منشن")),
+  new SlashCommandBuilder().setName("serverinfo").setDescription("معلومات السيرفر"),
+  new SlashCommandBuilder().setName("roles").setDescription("قائمة الرتب"),
+  new SlashCommandBuilder().setName("members").setDescription("عدد الأعضاء"),
+  new SlashCommandBuilder().setName("ping").setDescription("سرعة البوت"),
+  new SlashCommandBuilder().setName("help").setDescription("كل الأوامر"),
+  new SlashCommandBuilder().setName("set-welcome").setDescription("تحديد روم الترحيب").setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addChannelOption(o=>o.setName("الروم").setDescription("روم").setRequired(true)),
+].map(c=>c.toJSON());
 
-const defaultSettings = {
-  welcomeChannelId: null,
-  welcomeMessage: "مرحباً بك في خادمنا! نتمنى لك وقتاً ممتعاً ومفيداً.",
-  autoRoleId: null,
-};
-
-async function readJson(file, fallback) {
-  try {
-    return JSON.parse(await readFile(file, "utf8"));
-  } catch (error) {
-    if (error.code !== "ENOENT") {
-      throw error;
-    }
-    return fallback;
-  }
-}
-
-async function writeJson(file, value) {
-  await mkdir(dataDirectory, { recursive: true });
-  await writeFile(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
-
-const settings = await readJson(settingsFile, {});
-const levels = await readJson(levelsFile, {});
-
-function guildSettings(guildId) {
-  settings[guildId] = { ...defaultSettings, ...settings[guildId] };
-  return settings[guildId];
-}
-
-function log(message, details = "") {
-  const suffix = details ? ` ${details}` : "";
-  process.stdout.write(`[arabic-discord-bot] ${message}${suffix}\n`);
-}
-
-function escapeXml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;");
-}
-
-async function avatarDataUri(member) {
-  try {
-    const response = await fetch(
-      member.user.displayAvatarURL({ extension: "png", size: 256 }),
-    );
-    if (!response.ok) return null;
-    const contentType = response.headers.get("content-type") || "image/png";
-    return `data:${contentType};base64,${Buffer.from(await response.arrayBuffer()).toString("base64")}`;
-  } catch {
-    return null;
-  }
-}
-
-async function createWelcomeCard(member) {
-  const avatar = await avatarDataUri(member);
-  const avatarMarkup = avatar
-    ? `<image href="${avatar}" x="76" y="122" width="256" height="256" preserveAspectRatio="xMidYMid slice" clip-path="url(#avatarClip)" />`
-    : `<circle cx="204" cy="250" r="128" fill="#334155" /><text x="204" y="275" text-anchor="middle" font-size="88" fill="#e2e8f0">${escapeXml(member.user.username.slice(0, 1).toUpperCase())}</text>`;
-
-  const svg = `
-    <svg width="1200" height="500" viewBox="0 0 1200 500" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="background" x1="0" x2="1" y1="0" y2="1">
-          <stop offset="0%" stop-color="#111827" />
-          <stop offset="100%" stop-color="#1e3a5f" />
-        </linearGradient>
-        <clipPath id="avatarClip"><circle cx="204" cy="250" r="128" /></clipPath>
-      </defs>
-      <rect width="1200" height="500" rx="28" fill="url(#background)" />
-      <circle cx="1030" cy="34" r="210" fill="#38bdf8" opacity="0.08" />
-      <circle cx="1110" cy="470" r="230" fill="#a78bfa" opacity="0.09" />
-      <circle cx="204" cy="250" r="142" fill="#0f172a" stroke="#38bdf8" stroke-width="5" />
-      ${avatarMarkup}
-      <text x="420" y="190" fill="#bae6fd" font-family="Arial, sans-serif" font-size="34" font-weight="700">مرحباً بك في خادمنا</text>
-      <text x="420" y="270" fill="#f8fafc" font-family="Arial, sans-serif" font-size="54" font-weight="700">${escapeXml(member.displayName)}</text>
-      <text x="420" y="330" fill="#cbd5e1" font-family="Arial, sans-serif" font-size="25">نتمنى لك وقتاً ممتعاً ومفيداً معنا</text>
-      <rect x="420" y="372" width="250" height="5" rx="3" fill="#38bdf8" />
-    </svg>
-  `;
-
-  return sharp(Buffer.from(svg)).png().toBuffer();
-}
-
-function getLevelRecord(guildId, userId) {
-  const key = `${guildId}:${userId}`;
-  levels[key] ??= { xp: 0, level: 0, messages: 0 };
-  return levels[key];
-}
-
-function levelFromXp(xp) {
-  return Math.floor(Math.sqrt(xp / 100));
-}
-
-function xpToNextLevel(level) {
-  return (level + 1) ** 2 * 100;
-}
-
-function mentionOrName(user) {
-  return `<@${user.id}>`;
-}
-
-const commandDefinitions = [
-  new SlashCommandBuilder()
-    .setName("help")
-    .setDescription("عرض قائمة أوامر البوت باللغة العربية"),
-  new SlashCommandBuilder()
-    .setName("welcome")
-    .setDescription("تحديد قناة ورسالة الترحيب")
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-    .addChannelOption((option) =>
-      option
-        .setName("channel")
-        .setDescription("قناة إرسال رسائل الترحيب")
-        .setRequired(true),
-    )
-    .addStringOption((option) =>
-      option
-        .setName("message")
-        .setDescription("رسالة إضافية اختيارية")
-        .setMaxLength(500)
-        .setRequired(false),
-    ),
-  new SlashCommandBuilder()
-    .setName("autorole")
-    .setDescription("تحديد رتبة تلقائية للأعضاء الجدد")
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
-    .addRoleOption((option) =>
-      option.setName("role").setDescription("الرتبة التلقائية").setRequired(true),
-    ),
-  new SlashCommandBuilder()
-    .setName("level")
-    .setDescription("عرض مستوى وخبرة عضو")
-    .addUserOption((option) =>
-      option.setName("user").setDescription("العضو المطلوب").setRequired(false),
-    ),
-  new SlashCommandBuilder()
-    .setName("ban")
-    .setDescription("حظر عضو من الخادم")
-    .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers)
-    .addUserOption((option) =>
-      option.setName("user").setDescription("العضو المطلوب حظره").setRequired(true),
-    )
-    .addStringOption((option) =>
-      option
-        .setName("reason")
-        .setDescription("سبب الحظر")
-        .setMaxLength(500)
-        .setRequired(false),
-    ),
-  new SlashCommandBuilder()
-    .setName("kick")
-    .setDescription("طرد عضو من الخادم")
-    .setDefaultMemberPermissions(PermissionFlagsBits.KickMembers)
-    .addUserOption((option) =>
-      option.setName("user").setDescription("العضو المطلوب طرده").setRequired(true),
-    )
-    .addStringOption((option) =>
-      option
-        .setName("reason")
-        .setDescription("سبب الطرد")
-        .setMaxLength(500)
-        .setRequired(false),
-    ),if (interaction.commandName === "warn") {
-    const target = interaction.options.getUser("العسكري");
-    const reason = interaction.options.getString("السبب");
-    const proof = interaction.options.getString("الدليل") || "لا يوجد دليل مرفق";
-
-    const date = new Date().toLocaleString('ar-MA', { timeZone: 'Africa/Casablanca', dateStyle: 'full', timeStyle: 'short' });
-
-    const embed = new EmbedBuilder()
-     .setColor(0x8B0000)
-     .setTitle('🚨 توبيخ عسكري رسمي 🚨')
-     .setThumbnail(target.displayAvatarURL({ dynamic: true }))
-     .addFields(
-        { name: '🎖️ اسم العسكري', value: `> ${target}`, inline: false },
-        { name: '📅 التاريخ والوقت', value: `> ${date}`, inline: false },
-        { name: '📝 السبب', value: `> ${reason}`, inline: false },
-        { name: '📎 الدليل', value: `> ${proof}`, inline: false },
-      )
-     .setFooter({ text: `تم التوبيخ بواسطة: ${interaction.user.tag}`, iconURL: interaction.user.displayAvatarURL() })
-     .setTimestamp();
-
-    await interaction.reply({ embeds: [embed] });
-    return;
-                    }
-].map((command) => command.toJSON());
-
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
+const rest = new REST({version:"10"}).setToken(process.env.DISCORD_TOKEN);
+async function registerCommands(){try{await rest.put(Routes.applicationCommands(process.env.CLIENT_ID),{body:commands});console.log("OK")}catch(e){console.error(e)}}
+client.on("ready",()=>{console.log(client.user.tag);registerCommands();});
+client.on("guildMemberAdd", async (m)=>{try{let id=WELCOME.channelId||process.env.WELCOME_CHANNEL_ID;if(!id)return;const ch=m.guild.channels.cache.get(id);if(!ch)return;let d=WELCOME.description.replace("{user}",`${m}`).replace("{server}",m.guild.name);const e=new EmbedBuilder().setTitle(WELCOME.title).setDescription(d).setColor(WELCOME.color).setFooter({text:WELCOME.footer}).setTimestamp();if(WELCOME.thumbnail)e.setThumbnail(m.user.displayAvatarURL({dynamic:true}));if(WELCOME.image?.startsWith("http"))e.setImage(WELCOME.image);ch.send({content:`مرحبا ${m} 👋`,embeds:[e]});}catch{}});
+client.on("messageCreate", async (msg)=>{if(msg.author.bot)return;const c=msg.content.toLowerCase().trim();for(const a of AUTO_REPLIES){for(const t of a.trigger){if(c.includes(t.toLowerCase())){let txt=a.reply.replace("{user}",`${msg.author}`).replace("{server}",msg.guild?.name||"");await msg.reply(txt);return;}}}});
+client.on("interactionCreate", async (i)=>{
+if(!i.isChatInputCommand()) return;
+const R=(c)=>i.reply(c);
+try{
+if(i.commandName==="kick"){const t=i.options.getMember("العضو");const r=i.options.getString("السبب")||"بدون";if(!t)return R({content:"ما لقيتوش",ephemeral:true});await t.kick(r);return R(`✅ تم طرد ${t.user.tag}`);}
+if(i.commandName==="ban"){const t=i.options.getMember("العضو");const r=i.options.getString("السبب")||"بدون";if(!t)return R({content:"ما لقيتوش",ephemeral:true});await t.ban({reason:r});return R(`✅ تم باند ${t.user.tag}`);}
+if(i.commandName==="unban"){const id=i.options.getString("id");await i.guild.bans.remove(id);return R(`✅ تم فك البان لـ ${id}`);}
+if(i.commandName==="timeout"){const t=i.options.getMember("العضو");const mins=i.options.getInteger("المدة");const r=i.options.getString("السبب")||"بدون";if(!t)return R({content:"ما لقيتوش",ephemeral:true});await t.timeout(mins*60*1000,r);return R(`✅ ميوت ${t.user.tag} ${mins}د`);}
+if(i.commandName==="untimeout"){const t=i.options.getMember("العضو");await t.timeout(null);return R(`✅ فك ميوت ${t.user.tag}`);}
+if(i.commandName==="warn"){const target=i.options.getUser("العضو");const reason=i.options.getString("السبب");const proof=i.options.getString("الدليل")||"لا يوجد";const date=new Date().toLocaleString('ar-EG',{timeZone:'Africa/Cairo',dateStyle:'full',timeStyle:'short'});const emb=new EmbedBuilder().setColor(0x8B0000).setTitle('🚨 توبيخ عسكري رسمي 🚨').setThumbnail(target.displayAvatarURL({dynamic:true})).addFields({name:'🎖️ العسكري',value:`> ${target}`,inline:false},{name:'📅 التاريخ',value:`> ${date}`,inline:false},{name:'📝 السبب',value:`> ${reason}`,inline:false},{name:'📎 الدليل',value:`> ${proof}`,inline:false}).setFooter({text:`بواسطة: ${i.user.tag}`,iconURL:i.user.displayAvatarURL()}).setTimestamp();return R({embeds:[emb]});}
+if(i.commandName==="clear"){const n=i.options.getInteger("العدد");await i.channel.bulkDelete(n,true);return R({content:`✅ مسح ${n}`,ephemeral:true});}
+if(i.commandName==="lock"){await i.channel.permissionOverwrites.edit(i.guild.roles.everyone,{SendMessages:false});return R(`🔒 قفل ${i.channel}`);}
+if(i.commandName==="unlock"){await i.channel.permissionOverwrites.edit(i.guild.roles.everyone,{SendMessages:null});return R(`🔓 فتح ${i.channel}`);}
+if(i.commandName==="hide"){await i.channel.permissionOverwrites.edit(i.guild.roles.everyone,{ViewChannel:false});return R(`👁️‍🗨️ تم إخفاء ${i.channel}`);}
+if(i.commandName==="unhide"){await i.channel.permissionOverwrites.edit(i.guild.roles.everyone,{ViewChannel:null});return R(`👁️ تم إظهار ${i.channel}`);}
+if(i.commandName==="slowmode"){const s=i.options.getInteger("الثواني");await i.channel.setRateLimitPerUser(s);return R(`✅ سلو مود ${s} ثانية`);}
+if(i.commandName==="addrole"){const m=i.options.getMember("العضو");const r=i.options.getRole("الرتبة");await m.roles.add(r);return R(`✅ إعطاء ${r} لـ ${m}`);}
+if(i.commandName==="removerole"){const m=i.options.getMember("العضو");const r=i.options.getRole("الرتبة");await m.roles.remove(r);return R(`✅ سحب ${r} من ${m}`);}
+if(i.commandName==="role"){const name=i.options.getString("الاسم");const r=await i.guild.roles.create({name:name});return R(`✅ تم إنشاء رتبة ${r}`);}
+if(i.commandName==="nick"){const m=i.options.getMember("العضو");const n=i.options.getString("الاسم");await m.setNickname(n);return R(`✅ تغيير اسم ${m.user.tag} إلى ${n}`);}
+if(i.commandName==="say"){const t=i.options.getString("الرسالة");await i.reply({content:"تم ✅",ephemeral:true});await i.channel.send(t);return;}
+if(i.commandName==="embed"){const title=i.options.getString("العنوان");const desc=i.options.getString("الوصف");const color=i.options.getString("اللون")||"#2b2d31";const e=new EmbedBuilder().setTitle(title).setDescription(desc).setColor(color).setTimestamp().setFooter({text:`بواسطة ${i.user.tag}`,iconURL:i.user.displayAvatarURL()});return R({embeds:[e]});}
+if(i.commandName==="announce"){const title=i.options.getString("العنوان");const msg=i.options.getString("الرسالة");const ch=i.options.getChannel("الروم")||i.channel;const e=new EmbedBuilder().setTitle(`📢 ${title}`).setDescription(msg).setColor(0xFF0000).setTimestamp().setFooter({text:`إعلان رسمي - ${i.guild.name}`});await ch.send({content:"@everyone",embeds:[e]});return R({content:`✅ تم إرسال الإعلان في ${ch}`,ephemeral:true});}
+if(i.commandName==="poll"){const q=i.options.getString("السؤال");const e=new EmbedBuilder().setTitle("📊 تصويت").setDescription(q).setColor(0x5865F2).setFooter({text:`بواسطة ${i.user.tag}`}).setTimestamp();const m=await i.reply({embeds:[e],fetchReply:true});await m.react("✅");await m.react("❌");return;}
+if(i.commandName==="avatar"){const u=i.options.getUser("العضو")||i.user;const e=new EmbedBuilder().setTitle(u.tag).setImage(u.displayAvatarURL({dynamic:true,size:1024})).setColor(0x2b2d31);return R({embeds:[e]});}
+if(i.commandName==="banner"){const u=i.options.getUser("العضو")||i.user;const fetched=await client.users.fetch(u.id,{force:true});const b=fetched.bannerURL({dynamic:true,size:1024});const e=new EmbedBuilder().setTitle(`بانر ${u.tag}`).setColor(0x2b2d31);if(b)e.setImage(b);else e.setDescription("ما عندوش بانر");return R({embeds:[e]});}
+if(i.commandName==="userinfo"){const m=i.options.getMember("العضو")||i.member;const e=new EmbedBuilder().setTitle(m.user.tag).setThumbnail(m.user.displayAvatarURL({dynamic:true})).addFields({name:"ID",value:m.id},{name:"دخل",value:`<t:${Math.floor(m.joinedTimestamp/1000)}:R>`},{name:"أنشأ حسابه",value:`<t:${Math.floor(m.user.createdTimestamp/1000)}:R>`},{name:"الرتب",value:m.roles.cache.map(r=>r.toString()).join(", ").slice(0,1000)||"لا يوجد"}).setColor(0x2b2d31);return R({embeds:[e]});}
+if(i.commandName==="serverinfo"){const g=i.guild;const e=new EmbedBuilder().setTitle(g.name).setThumbnail(g.iconURL({dynamic:true})).addFields({name:"المالك",value:`<@${g.ownerId}>`},{name:"الأعضاء",value:`${g.memberCount}`},{name:"الرتب",value:`${g.roles.cache.size}`},{name:"الرومات",value:`${g.channels.cache.size}`},{name:"تاريخ الإنشاء",value:`<t:${Math.floor(g.createdTimestamp/1000)}:D>`}).setColor(0x2b2d31);return R({embeds:[e]});}
+if(i.commandName==="roles"){const g=i.guild;return R({content:`**الرتب (${g.roles.cache.size}):**\n${g.roles.cache.map(r=>r.toString()).join(", ").slice(0,1900)}`,ephemeral:true});}
+if(i.commandName==="members"){return R(`👥 الأعضاء: **${i.guild.memberCount}**`);}
+if(i.commandName==="ping"){return R(`🏓 البينغ: **${client.ws.ping}ms**`);}
+if(i.commandName==="help"){const e=new EmbedBuilder().setTitle("📜 كل أوامر الجيش").setDescription(`
+**🔨 حماية:** /kick /ban /unban /timeout /untimeout /warn
+**🧹 إدارة الرومات:** /clear /lock /unlock /hide /unhide /slowmode
+**🎖️ رتب:** /addrole /removerole /role /roles /nick
+**💬 رسائل:** /say /embed /announce /poll
+**ℹ️ معلومات:** /avatar /banner /userinfo /serverinfo /members /ping
+**👋 ترحيب:** /set-welcome
+**🤖 تلقائي:** سلام عليكم / صباح الخير...
+`).setColor(0x2b2d31);return R({embeds:[e],ephemeral:true});}
+if(i.commandName==="set-welcome"){const ch=i.options.getChannel("الروم");WELCOME.channelId=ch.id;return R({content:`✅ روم الترحيب هو ${ch}`,ephemeral:true});}
+}catch(e){console.error(e);if(!i.replied) i.reply({content:"❌ خطأ: "+e.message,ephemeral:true});}
 });
-
-async function registerCommands(userId) {
-  const rest = new REST({ version: "10" }).setToken(token);
-  const guildId = process.env.DISCORD_GUILD_ID;
-  const route = guildId
-    ? Routes.applicationGuildCommands(userId, guildId)
-    : Routes.applicationCommands(userId);
-
-  await rest.put(route, { body: commandDefinitions });
-  log(
-    guildId
-      ? "تم تسجيل الأوامر في الخادم المحدد."
-      : "تم تسجيل الأوامر العامة. قد يستغرق ظهورها بعض الوقت.",
-  );
-}
-
-client.once("ready", async (readyClient) => {
-  log(`تم تسجيل الدخول باسم ${readyClient.user.tag}.`);
-  try {
-    await registerCommands(readyClient.user.id);
-  } catch (error) {
-    log("تعذر تسجيل أوامر التفاعل.", error.message);
-  }
-});
-
-client.on("guildMemberAdd", async (member) => {
-  const config = guildSettings(member.guild.id);
-
-  if (config.autoRoleId) {
-    const role = member.guild.roles.cache.get(config.autoRoleId);
-    if (role && role.editable) {
-      await member.roles.add(role, "رتبة تلقائية للعضو الجديد").catch((error) => {
-        log("تعذر إضافة الرتبة التلقائية.", error.message);
-      });
-    }
-  }
-
-  if (!config.welcomeChannelId) return;
-  const channel = member.guild.channels.cache.get(config.welcomeChannelId);
-  if (!channel?.isTextBased()) return;
-
-  try {
-    const image = await createWelcomeCard(member);
-    const attachment = new AttachmentBuilder(image, {
-      name: "welcome.png",
-      description: "بطاقة ترحيب بالعضو الجديد",
-    });
-    await channel.send({
-      content: `${mentionOrName(member.user)}\n${config.welcomeMessage}`,
-      files: [attachment],
-    });
-  } catch (error) {
-    log("تعذر إرسال رسالة الترحيب.", error.message);
-  }
-});
-
-client.on("messageCreate", async (message) => {
-  if (!message.guild || message.author.bot) return;
-
-  const record = getLevelRecord(message.guild.id, message.author.id);
-  const oldLevel = record.level;
-  record.xp += 5 + Math.floor(Math.random() * 8);
-  record.messages += 1;
-  record.level = levelFromXp(record.xp);
-  await writeJson(levelsFile, levels);
-
-  if (record.level > oldLevel) {
-    await message.channel
-      .send(
-        `${mentionOrName(message.author)} تهانينا! وصلت إلى المستوى **${record.level}**.`,
-      )
-      .catch(() => {});
-  }
-});
-
-client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand() || !interaction.guild) return;
-
-  try {
-    if (interaction.commandName === "help") {
-      const embed = new EmbedBuilder()
-        .setColor(0x38bdf8)
-        .setTitle("مساعدة البوت")
-        .setDescription("إليك الأوامر المتاحة:")
-        .addFields(
-          {
-            name: "/welcome",
-            value: "تحديد قناة ورسالة الترحيب المصورة. يتطلب صلاحية إدارة الخادم.",
-          },
-          {
-            name: "/autorole",
-            value: "تحديد رتبة تلقائية للأعضاء الجدد. يتطلب صلاحية إدارة الرتب.",
-          },
-          { name: "/level", value: "عرض مستوى وخبرة عضو." },
-          { name: "/ban", value: "حظر عضو مع سبب اختياري." },
-          { name: "/kick", value: "طرد عضو مع سبب اختياري." },
-        )
-        .setFooter({ text: "جميع رسائل البوت باللغة العربية الفصحى" });
-      await interaction.reply({ embeds: [embed], ephemeral: true });
-      return;
-    }
-
-    if (interaction.commandName === "welcome") {
-      const channel = interaction.options.getChannel("channel", true);
-      const message =
-        interaction.options.getString("message") || defaultSettings.welcomeMessage;
-      if (!channel.isTextBased()) {
-        await interaction.reply({
-          content: "يرجى اختيار قناة نصية صالحة.",
-          ephemeral: true,
-        });
-        return;
-      }
-      const config = guildSettings(interaction.guild.id);
-      config.welcomeChannelId = channel.id;
-      config.welcomeMessage = message;
-      await writeJson(settingsFile, settings);
-      await interaction.reply({
-        content: `تم تفعيل الترحيب المصور في ${channel}.`,
-        ephemeral: true,
-      });
-      return;
-    }
-
-    if (interaction.commandName === "autorole") {
-      const role = interaction.options.getRole("role", true);
-      const botMember = interaction.guild.members.me;
-      if (!botMember || role.position >= botMember.roles.highest.position) {
-        await interaction.reply({
-          content: "لا أستطيع إدارة هذه الرتبة. ارفع رتبة البوت أعلى منها أولاً.",
-          ephemeral: true,
-        });
-        return;
-      }
-      const config = guildSettings(interaction.guild.id);
-      config.autoRoleId = role.id;
-      await writeJson(settingsFile, settings);
-      await interaction.reply({
-        content: `تم تعيين ${role} رتبة تلقائية للأعضاء الجدد.`,
-        ephemeral: true,
-      });
-      return;
-    }
-
-    if (interaction.commandName === "level") {
-      const user = interaction.options.getUser("user") || interaction.user;
-      const record = getLevelRecord(interaction.guild.id, user.id);
-      const nextLevelXp = xpToNextLevel(record.level);
-      await interaction.reply(
-        `المستوى: **${record.level}**\nالخبرة: **${record.xp} / ${nextLevelXp}**\nعدد الرسائل المحتسبة: **${record.messages}**\nالعضو: ${mentionOrName(user)}`,
-      );
-      return;
-    }
-
-    if (interaction.commandName === "ban" || interaction.commandName === "kick") {
-      const user = interaction.options.getUser("user", true);
-      const reason =
-        interaction.options.getString("reason") || "لم يتم تحديد سبب.";
-      const target = await interaction.guild.members
-        .fetch(user.id)
-        .catch(() => null);
-
-      if (!target) {
-        await interaction.reply({
-          content: "لم أجد هذا العضو في الخادم.",
-          ephemeral: true,
-        });
-        return;
-      }
-
-      if (
-        target.id === interaction.user.id ||
-        target.id === interaction.client.user.id
-      ) {
-        await interaction.reply({
-          content: "لا يمكن تنفيذ هذا الإجراء على هذا العضو.",
-          ephemeral: true,
-        });
-        return;
-      }
-
-      if (interaction.commandName === "ban") {
-        await target.ban({ reason });
-        await interaction.reply(`تم حظر ${mentionOrName(user)}.\nالسبب: ${reason}`);
-      } else {
-        await target.kick(reason);
-        await interaction.reply(`تم طرد ${mentionOrName(user)}.\nالسبب: ${reason}`);
-      }
-    }
-  } catch (error) {
-    log(`فشل تنفيذ الأمر ${interaction.commandName}.`, error.message);
-    const content = "حدث خطأ أثناء تنفيذ الأمر. تحقق من صلاحيات البوت وحاول مجدداً.";
-    if (interaction.replied || interaction.deferred) {
-      await interaction.followUp({ content, ephemeral: true }).catch(() => {});
-    } else {
-      await interaction.reply({ content, ephemeral: true }).catch(() => {});
-    }
-  }
-});
-
-client.on("error", (error) => log("حدث خطأ في اتصال Discord.", error.message));
-
-process.on("SIGINT", () => {
-  client.destroy();
-  process.exit(0);
-});
-
-process.on("SIGTERM", () => {
-  client.destroy();
-  process.exit(0);
-});
-
-await client.login(token);
+client.login(process.env.DISCORD_TOKEN);
