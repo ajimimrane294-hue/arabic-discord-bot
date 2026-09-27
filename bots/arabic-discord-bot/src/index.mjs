@@ -187,7 +187,29 @@ const commandDefinitions = [
         .setDescription("سبب الطرد")
         .setMaxLength(500)
         .setRequired(false),
-    ),
+    ),if (interaction.commandName === "warn") {
+    const target = interaction.options.getUser("العسكري");
+    const reason = interaction.options.getString("السبب");
+    const proof = interaction.options.getString("الدليل") || "لا يوجد دليل مرفق";
+
+    const date = new Date().toLocaleString('ar-MA', { timeZone: 'Africa/Casablanca', dateStyle: 'full', timeStyle: 'short' });
+
+    const embed = new EmbedBuilder()
+     .setColor(0x8B0000)
+     .setTitle('🚨 توبيخ عسكري رسمي 🚨')
+     .setThumbnail(target.displayAvatarURL({ dynamic: true }))
+     .addFields(
+        { name: '🎖️ اسم العسكري', value: `> ${target}`, inline: false },
+        { name: '📅 التاريخ والوقت', value: `> ${date}`, inline: false },
+        { name: '📝 السبب', value: `> ${reason}`, inline: false },
+        { name: '📎 الدليل', value: `> ${proof}`, inline: false },
+      )
+     .setFooter({ text: `تم التوبيخ بواسطة: ${interaction.user.tag}`, iconURL: interaction.user.displayAvatarURL() })
+     .setTimestamp();
+
+    await interaction.reply({ embeds: [embed] });
+    return;
+                    }
 ].map((command) => command.toJSON());
 
 const client = new Client({
