@@ -1,3 +1,4 @@
+console.log("ANA KHDAM HAHOWA TEST 123456");
 import { Client, Partials, EmbedBuilder, REST, Routes, SlashCommandBuilder } from 'discord.js';
 import fs from 'fs';
 
