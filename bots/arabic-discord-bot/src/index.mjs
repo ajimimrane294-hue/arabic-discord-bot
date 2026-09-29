@@ -11,21 +11,25 @@ const saveConfig = () => fs.writeFileSync('./config.json', JSON.stringify(config
 
 const raw = [];
 
-// --- التوبيخ الجديد فيه منشن + سمية ---
 const tobi5Builder = (name, desc) => {
   return new SlashCommandBuilder().setName(name).setDescription(desc)
- .addUserOption(o=>o.setName('mention').setDescription('منشن العسكري (اختياري)').setRequired(false))
- .addStringOption(o=>o.setName('name').setDescription('اسم العسكري داخل اللعبة (اذا ما كاينش منشن)').setRequired(false))
- .addStringOption(o=>o.setName('reason').setDescription('سبب التوبيخ').setRequired(true))
- .addAttachmentOption(o=>o.setName('evidence').setDescription('دليل صورة اختياري').setRequired(false))
- .addStringOption(o=>o.setName('proof').setDescription('دليل رابط اختياري').setRequired(false))
+.addUserOption(o=>o.setName('mention').setDescription('منشن العسكري (اختياري)').setRequired(false))
+.addStringOption(o=>o.setName('name').setDescription('اسم العسكري داخل اللعبة (اذا ما كاينش منشن)').setRequired(false))
+.addStringOption(o=>o.setName('reason').setDescription('سبب التوبيخ').setRequired(true))
+.addAttachmentOption(o=>o.setName('evidence').setDescription('دليل صورة اختياري').setRequired(false))
+.addStringOption(o=>o.setName('proof').setDescription('دليل رابط اختياري').setRequired(false))
 }
 
 raw.push(tobi5Builder('توبيخ', 'تسجيل توبيخ عسكري'));
 raw.push(tobi5Builder('warn', 'تسجيل توبيخ عسكري'));
 
-raw.push(new SlashCommandBuilder().setName('ازالة_توبيخ').setDescription('ازالة توبيخ').addStringOption(o=>o.setName('name').setDescription('اسم العسكري').setRequired(true)).addIntegerOption(o=>o.setName('number').setDescription('رقم التوبيخ').setRequired(true)));
-raw.push(new SlashCommandBuilder().setName('التوبيخات').setDescription('عرض سجل التوبيخات').addStringOption(o=>o.setName('name').setDescription('اسم العسكري').setRequired(true)));
+// --- اوامر جديدة ---
+raw.push(new SlashCommandBuilder().setName('توبيخاتي').setDescription('عرض توبيخاتك الخاصة'));
+raw.push(new SlashCommandBuilder().setName('التوبيخات').setDescription('عرض سجل التوبيخات')
+ .addStringOption(o=>o.setName('name').setDescription('اسم العسكري').setRequired(false))
+ .addUserOption(o=>o.setName('mention').setDescription('او منشن العسكري').setRequired(false)));
+
+raw.push(new SlashCommandBuilder().setName('ازالة_توبيخ').setDescription('ازالة توبيخ').addStringOption(o=>o.setName('name').setDescription('اسم العسكري او الايدي').setRequired(true)).addIntegerOption(o=>o.setName('number').setDescription('رقم التوبيخ').setRequired(true)));
 raw.push(new SlashCommandBuilder().setName('مسح_التوبيخات').setDescription('مسح جميع التوبيخات').addStringOption(o=>o.setName('name').setDescription('اسم العسكري').setRequired(true)));
 
 raw.push(new SlashCommandBuilder().setName('ban').setDescription('حظر عضو').addUserOption(o=>o.setName('user').setDescription('العضو').setRequired(true)));
@@ -60,7 +64,6 @@ function getArabicDate(){
   return now.toLocaleString('ar-EG', { timeZone: 'Africa/Casablanca', day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true }).replace(',', ' |');
 }
 
-// فانكشن ديال الديزاين الجديد باش نستعملوها فكاع الكودات
 function createNiceEmbed({title, color, fields, imageUrl}){
   const embed = new EmbedBuilder().setTitle(title).setColor(color).setTimestamp();
   if(fields) embed.addFields(fields);
@@ -83,100 +86,110 @@ client.on('interactionCreate', async i => {
       const att = i.options.getAttachment('evidence');
       const link = i.options.getString('proof');
 
-      if(!mentionUser &&!soldierNameInput) return i.editReply('❌ خاصك تدير منشن للعسكري ولا تكتب سميتو!');
+      if(!mentionUser &&!soldierNameInput) return i.editReply('❌ خاصك تدير منشن ولا تكتب السمية');
 
       const displayName = mentionUser? mentionUser.username : soldierNameInput;
       const displayMention = mentionUser? `<@${mentionUser.id}>` : `**${soldierNameInput}**`;
-      const key = displayName.toLowerCase();
+      const key = mentionUser? mentionUser.id : displayName.toLowerCase();
 
       if(!warns[gid][key]) warns[gid][key] = [];
-      warns[gid][key].push({ name: displayName, reason, mod: i.user.id, evidence: att?.url || link || null, date: Date.now() });
+      warns[gid][key].push({ name: displayName, displayMention, reason, mod: i.user.id, evidence: att?.url || link || null, date: Date.now() });
       saveWarns();
 
       const total = warns[gid][key].length;
       const dateText = getArabicDate();
 
-      let evidenceText = '` لا يوجد دليل `';
-      if(att?.url) evidenceText = `[اضغط للمشاهدة](${att.url})`;
-      else if(link) evidenceText = link;
+      let evidenceValue = '` لا يوجد دليل `';
+      if(att?.url) evidenceValue = `[ اضغط للمشاهدة ](${att.url})`;
+      else if(link) evidenceValue = `[ ${link} ](${link})`;
 
-      const embed = createNiceEmbed({
-        title: '🚨 السجل التأديبي للجيش 🦅',
-        color: 0xFF0000,
-        imageUrl: att?.url || null,
-        fields: [
+      const embed = new EmbedBuilder()
+      .setColor('#FF0000')
+      .setTitle('🚨 السجل التأديبي للجيش 🦅')
+      .addFields(
           { name: '🪖 العسكري المخالف', value: `${displayMention}\n\`${displayName}\``, inline: false },
-          { name: '✍️ المسؤول', value: `<@${i.user.id}>`, inline: true },
-          { name: '📜 التوبيخات', value: `\` [ ${total} / 3 ] \``, inline: true },
-          { name: '📝 سبب التوبيخ', value: `\`\`\`${reason}\`\`\``, inline: false },
-          { name: '🎥 دليل التوبيخ', value: evidenceText, inline: false },
-          { name: '⏳ التاريخ والوقت', value: `\` ${dateText} \``, inline: false },
-        ]
-      });
+          { name: '✍️ المسؤول', value: `<@${i.user.id}>`, inline: false },
+          { name: '📝 سبب التوبيخ', value: `${reason}`, inline: false },
+          { name: '\u200B', value: '\u200B', inline: false },
+          { name: '🎥 دليل التوبيخ', value: evidenceValue, inline: false },
+          { name: '⏳ التاريخ والوقت', value: `${dateText}`, inline: false },
+          { name: '📜 التوبيخات الحالية', value: `**[ ${total} / 3 ]**`, inline: false }
+        )
+      .setTimestamp();
 
+      if(att?.url) embed.setImage(att.url);
       return i.editReply({ embeds: [embed] });
     }
 
+    if(nameCmd === 'توبيخاتي'){
+      const myId = i.user.id;
+      const myName = i.user.username.toLowerCase();
+      let list = warns[gid][myId] || [];
+
+      if(list.length === 0){
+        for(const k in warns[gid]){
+          for(const w of warns[gid][k]){
+            if(w.name?.toLowerCase() === myName) list.push(w);
+          }
+        }
+      }
+
+      if(!list.length) return i.editReply({ embeds: [new EmbedBuilder().setColor(0x00FF00).setTitle('✅ سجلك نظيف').setDescription(`<@${myId}> ما عندك حتى توبيخ`)] });
+
+      const desc = list.map((w, idx)=>{
+        const ev = w.evidence? ` [الدليل](${w.evidence})` : ' لا يوجد دليل';
+        return `**${idx+1}.** ${w.reason}\n> 🎥 الدليل: ${ev}\n> بواسطة: <@${w.mod}> - <t:${Math.floor(w.date/1000)}:R>`;
+      }).join('\n\n');
+
+      const embed = new EmbedBuilder().setTitle(`📋 توبيخاتك`).setDescription(desc).setColor(0xFFA500).setFooter({text: `المجموع [ ${list.length} / 3 ]`});
+      return i.editReply({ content: `<@${myId}>`, embeds: [embed] });
+    }
+
     if(['التوبيخات'].includes(nameCmd)){
+      const mention = i.options.getUser('mention');
       const soldierName = i.options.getString('name');
-      const key = soldierName.toLowerCase();
-      const list = warns[gid][key]||[];
-      if(!list.length) return i.editReply({ embeds: [createNiceEmbed({ title: `✅ سجل نظيف`, color: 0x00FF00, fields: [{name: `العسكري ${soldierName}`, value: 'ما عندو حتى توبيخ'}] })] });
-      const desc = list.map((w,k)=>`**${k+1}.** ${w.reason} - <@${w.mod}> - <t:${Math.floor(w.date/1000)}:R>`).join('\n');
-      return i.editReply({ embeds: [new EmbedBuilder().setTitle(`📋 سجل ${soldierName} [${list.length}/3]`).setDescription(desc).setColor(0x2b2d31)] });
+      const key = mention? mention.id : soldierName?.toLowerCase();
+      let list = warns[gid][key] || [];
+      if(!list.length && soldierName) list = warns[gid][soldierName.toLowerCase()] || [];
+
+      if(!list.length) return i.editReply(`✅ سجله نظيف`);
+
+      const desc = list.map((w, idx)=>{
+        const ev = w.evidence? `🎥 [اضغط للمشاهدة](${w.evidence})` : '` لا يوجد دليل `';
+        return `**${idx+1}.** 📝 ${w.reason}\n> دليل التوبيخ امامك: ${ev}\n> بواسطة: <@${w.mod}>`;
+      }).join('\n\n');
+
+      return i.editReply({ embeds: [new EmbedBuilder().setTitle(`📋 سجل ${list[0].name} [${list.length}/3]`).setDescription(desc).setColor(0x2b2d31)] });
     }
 
     if(['ازالة_توبيخ'].includes(nameCmd)){
       const soldierName = i.options.getString('name'); const n = i.options.getInteger('number')-1;
-      const key = soldierName.toLowerCase();
+      let key = soldierName;
+      if(warns[gid][soldierName.toLowerCase()]) key = soldierName.toLowerCase();
+      if(!warns[gid][key]?.[n]){
+        // قلب على اول واحد سميتو كتشبه
+        for(const k in warns[gid]){ if(warns[gid][k][0]?.name.toLowerCase() === soldierName.toLowerCase()) key=k; }
+      }
       if(!warns[gid][key]?.[n]) return i.editReply('❌ لا يوجد توبيخ بهذا الرقم');
       warns[gid][key].splice(n,1); saveWarns();
-      return i.editReply({ embeds: [createNiceEmbed({ title: '✅ تمت الإزالة', color: 0x00FF00, fields: [{name: 'العسكري', value: soldierName}, {name: 'رقم التوبيخ', value: `${n+1}`}] })] });
+      return i.editReply(`✅ تمت إزالة التوبيخ رقم ${n+1}`);
     }
 
     if(['مسح_التوبيخات'].includes(nameCmd)){
       const soldierName = i.options.getString('name'); const key = soldierName.toLowerCase();
-      warns[gid][key]=[]; saveWarns();
-      return i.editReply({ embeds: [createNiceEmbed({ title: '🗑️ تم المسح', color: 0xFF0000, fields: [{name: 'تم مسح جميع توبيخات', value: soldierName}] })] });
+      warns[gid][key]=[]; if(warns[gid][soldierName]) warns[gid][soldierName]=[]; saveWarns();
+      return i.editReply(`🗑️ تم مسح جميع توبيخات ${soldierName}`);
     }
 
-    if(['ban','حظر'].includes(nameCmd)){
-      const u = i.options.getUser('user'); await i.guild.members.ban(u.id).catch(()=>{});
-      return i.editReply({ embeds: [createNiceEmbed({ title: '🔨 تم الحظر', color: 0xFF0000, fields: [{name: 'العضو', value: `${u}`}, {name: 'بواسطة', value: `<@${i.user.id}>`}] })] });
-    }
-    if(['kick','طرد'].includes(nameCmd)){
-      const u = i.options.getUser('user'); const m = i.guild.members.cache.get(u.id); await m?.kick().catch(()=>{});
-      return i.editReply({ embeds: [createNiceEmbed({ title: '👢 تم الطرد', color: 0xFFA500, fields: [{name: 'العضو', value: `${u}`}, {name: 'بواسطة', value: `<@${i.user.id}>`}] })] });
-    }
-    if(['timeout','اسكات'].includes(nameCmd)){
-      const u = i.options.getUser('user'); const d = i.options.getInteger('duration');
-      const m = i.guild.members.cache.get(u.id); await m?.timeout(d*60*1000).catch(()=>{});
-      return i.editReply({ embeds: [createNiceEmbed({ title: '🔇 تم الإسكات', color: 0xFFFF00, fields: [{name: 'العضو', value: `${u}`}, {name: 'المدة', value: `${d} دقيقة`}] })] });
-    }
-    if(['untimeout','فك_الاسكات'].includes(nameCmd)){
-      const u = i.options.getUser('user'); const m = i.guild.members.cache.get(u.id); await m?.timeout(null).catch(()=>{});
-      return i.editReply({ embeds: [createNiceEmbed({ title: '🔊 تم فك الإسكات', color: 0x00FF00, fields: [{name: 'العضو', value: `${u}`}] })] });
-    }
-    if(['clear','مسح'].includes(nameCmd)){
-      const n = i.options.getInteger('amount'); await i.channel.bulkDelete(n, true).catch(()=>{});
-      return i.editReply({ embeds: [createNiceEmbed({ title: '🧹 تم المسح', color: 0x2b2d31, fields: [{name: 'العدد', value: `${n} رسالة`}] })] });
-    }
-    if(['lock','قفل'].includes(nameCmd)){
-      await i.channel.permissionOverwrites.edit(i.guild.roles.everyone, {SendMessages:false});
-      return i.editReply({ embeds: [createNiceEmbed({ title: '🔒 تم قفل القناة', color: 0xFF0000, fields: [{name: 'القناة', value: `${i.channel}`}] })] });
-    }
-    if(['unlock','فتح'].includes(nameCmd)){
-      await i.channel.permissionOverwrites.edit(i.guild.roles.everyone, {SendMessages:true});
-      return i.editReply({ embeds: [createNiceEmbed({ title: '🔓 تم فتح القناة', color: 0x00FF00, fields: [{name: 'القناة', value: `${i.channel}`}] })] });
-    }
-    if(['set-welcome','ترحيب'].includes(nameCmd)){
-      const ch = i.options.getChannel('channel');
-      if(!config[gid]) config[gid]={}; config[gid].welcomeChannel=ch.id; saveConfig();
-      return i.editReply(`✅ تم تعيين قناة الترحيب في ${ch}`);
-    }
-    if(['help','مساعدة'].includes(nameCmd)){
-      return i.editReply('📜 **الاوامر:** /توبيخ mention:@شخص name:سمية reason:السبب - /التوبيخات - /ازالة_توبيخ - /مسح_التوبيخات');
-    }
+    if(['ban','حظر'].includes(nameCmd)){ const u = i.options.getUser('user'); await i.guild.members.ban(u.id).catch(()=>{}); return i.editReply(`🔨 تم حظر ${u}`); }
+    if(['kick','طرد'].includes(nameCmd)){ const u = i.options.getUser('user'); const m = i.guild.members.cache.get(u.id); await m?.kick().catch(()=>{}); return i.editReply(`👢 تم طرد ${u}`); }
+    if(['timeout','اسكات'].includes(nameCmd)){ const u = i.options.getUser('user'); const d = i.options.getInteger('duration'); const m = i.guild.members.cache.get(u.id); await m?.timeout(d*60*1000).catch(()=>{}); return i.editReply(`🔇 تم إسكات ${u} لمدة ${d} دقيقة`); }
+    if(['untimeout','فك_الاسكات'].includes(nameCmd)){ const u = i.options.getUser('user'); const m = i.guild.members.cache.get(u.id); await m?.timeout(null).catch(()=>{}); return i.editReply(`🔊 تم إلغاء الإسكات عن ${u}`); }
+    if(['clear','مسح'].includes(nameCmd)){ const n = i.options.getInteger('amount'); await i.channel.bulkDelete(n, true).catch(()=>{}); return i.editReply(`🧹 تم مسح ${n}`); }
+    if(['lock','قفل'].includes(nameCmd)){ await i.channel.permissionOverwrites.edit(i.guild.roles.everyone, {SendMessages:false}); return i.editReply('🔒 تم قفل القناة'); }
+    if(['unlock','فتح'].includes(nameCmd)){ await i.channel.permissionOverwrites.edit(i.guild.roles.everyone, {SendMessages:true}); return i.editReply('🔓 تم فتح القناة'); }
+    if(['set-welcome','ترحيب'].includes(nameCmd)){ const ch = i.options.getChannel('channel'); if(!config[gid]) config[gid]={}; config[gid].welcomeChannel=ch.id; saveConfig(); return i.editReply(`✅ تم تعيين قناة الترحيب في ${ch}`); }
+    if(['help','مساعدة'].includes(nameCmd)){ return i.editReply('📜 **الاوامر:** /توبيخ mention: @شخص + reason + evidence - /توبيخاتي - /التوبيخات - /ازالة_توبيخ'); }
 
   }catch(e){ return i.editReply(`❌ خطأ: ${e.message}`); }
 });
